@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "BasketPulse Helper",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "BasketPulse 球員技能、潛力與訓練輔助工具",
   "permissions": [
     "storage"
@@ -19,6 +19,22 @@
       ],
       "js": [
         "src/vendor/html2canvas.min.js",
+
+        "src/content/core/constants.js",
+        "src/content/core/debug.js",
+        "src/content/core/utils.js",
+        "src/content/core/pageRouter.js",
+        "src/content/core/fetchClient.js",
+
+        "src/content/training/trainingConstants.js",
+        "src/content/training/trainingPlayerParser.js",
+        "src/content/training/trainingRows.js",
+        "src/content/training/trainingOverviewParser.js",
+        "src/content/training/trainingOverviewFetch.js",
+        "src/content/training/trainingExport.js",
+        "src/content/training/trainingToolbar.js",
+        "src/content/training/trainingPage.js",
+
         "src/content/content.js"
       ],
       "css": [

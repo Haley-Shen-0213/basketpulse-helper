@@ -27,3 +27,6 @@ build/
 
 # Node
 node_modules/
+
+ai_exports/
+整體開發流程確認
