@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "BasketPulse Helper",
+  "version": "0.6.0",
+  "description": "在 BasketPulse 球員技能頁顯示潛力素質、訓練結果，並支援匯出主要球員表格圖片。",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [
+    "https://www.basketpulse.com/*"
+  ],
+  "background": {
+    "service_worker": "src/background/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.basketpulse.com/tw/Players/skills*"
+      ],
+      "js": [
+        "src/vendor/html2canvas.min.js",
+        "src/content/content.js"
+      ],
+      "css": [
+        "src/content/content.css"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

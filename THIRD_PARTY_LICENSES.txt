@@ -1,0 +1,26 @@
+Third Party Licenses
+====================
+
+This project includes third-party open source software.
+
+------------------------------------------------------------
+html2canvas
+------------------------------------------------------------
+
+Project:
+https://html2canvas.hertzen.com/
+
+Repository:
+https://github.com/niklasvh/html2canvas
+
+License:
+MIT License
+
+Copyright:
+Copyright (c) 2022 Niklas von Hertzen
+
+Usage:
+html2canvas is used to export the main BasketPulse player table as a PNG image inside the user's browser.
+
+The full license text for html2canvas can be found in the html2canvas project repository:
+https://github.com/niklasvh/html2canvas/blob/master/LICENSE
