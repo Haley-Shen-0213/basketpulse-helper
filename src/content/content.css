@@ -1,95 +1,173 @@
 #bp-helper-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
   flex-wrap: wrap;
-  margin: 8px 0 12px;
+  gap: 6px;
+  margin: 10px 0;
   padding: 8px 10px;
-  border: 1px solid #d9d9d9;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
   border-radius: 6px;
-  background: #ffffff;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 #bp-helper-toolbar .bp-helper-title {
   font-weight: 700;
+  color: #0f172a;
   margin-right: 4px;
-  color: #111827;
 }
 
-#bp-helper-toolbar button {
-  padding: 4px 10px;
-  border: 1px solid #bfc7d5;
+#bp-helper-toolbar button,
+#bp-helper-toolbar select {
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 4px 8px;
+  border: 1px solid #94a3b8;
   border-radius: 4px;
-  background: #f8fafc;
-  color: #111827;
+  background: #ffffff;
+  color: #0f172a;
   cursor: pointer;
-  font-size: 12px;
-  line-height: 1.5;
 }
 
-#bp-helper-toolbar button:hover {
-  background: #eef2ff;
-  border-color: #8da2fb;
+#bp-helper-toolbar button:hover,
+#bp-helper-toolbar select:hover {
+  background: #e2e8f0;
 }
 
 #bp-helper-toolbar button:disabled {
+  opacity: 0.6;
   cursor: not-allowed;
-  opacity: 0.65;
 }
 
-#bp-helper-toolbar .bp-helper-status {
-  color: #555;
-  margin-left: 4px;
+#bp-helper-toolbar select {
+  min-width: 100px;
 }
 
-.bp-analysis-row,
-.bp-training-row {
-  font-size: 11px;
+.bp-export-range-label {
+  margin-left: 6px;
+  color: #334155;
+  font-weight: 600;
 }
 
-.bp-analysis-row {
-  background: #eefaf0;
-}
-
-.bp-training-row {
-  background: #edf5ff;
+.bp-helper-status {
+  color: #475569;
+  margin-left: 6px;
 }
 
 .bp-extra-label {
-  text-align: right;
   font-weight: 700;
-  color: #374151;
-  white-space: nowrap;
+  color: #334155;
+  background: #f8fafc;
 }
 
 .bp-extra-cell {
   text-align: center;
-  white-space: nowrap;
-  font-weight: 700;
+  font-weight: 600;
+  background: #ffffff;
 }
 
 .bp-positive {
-  color: #00844c;
+  color: #15803d !important;
 }
 
 .bp-negative {
-  color: #d50000;
+  color: #b91c1c !important;
 }
 
 .bp-neutral {
-  color: #1f2a44;
+  color: #64748b !important;
 }
 
 .bp-loading {
-  color: #6b7280;
+  color: #2563eb !important;
 }
 
 .bp-error {
-  color: #dc2626;
-  font-weight: 800;
+  color: #dc2626 !important;
 }
 
 .bp-helper-hidden {
   display: none !important;
+}
+
+/**
+ * 第二版新增：
+ * 自選球員 checkbox。
+ * 預設不顯示，只有選擇「自選球員」時才顯示。
+ */
+.bp-export-checkbox-wrap {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
+.bp-export-player-checkbox {
+  width: 14px;
+  height: 14px;
+  margin: 0 4px 0 0;
+  cursor: pointer;
+}
+
+body.bp-export-custom-mode .bp-export-checkbox-wrap {
+  display: inline-flex;
+}
+
+body.bp-export-custom-mode tr.bp-original-player-row {
+  outline: 1px dashed rgba(37, 99, 235, 0.25);
+  outline-offset: -1px;
+}
+
+body.bp-export-custom-mode tr.bp-original-player-row:hover {
+  background: rgba(219, 234, 254, 0.65) !important;
+}
+
+/**
+ * 第二版新增：
+ * 臨時匯出容器。
+ * 放在畫面外，不影響使用者操作。
+ */
+.bp-temp-export-wrapper {
+  position: absolute;
+  left: -99999px;
+  top: 0;
+  width: max-content;
+  max-width: none;
+  padding: 16px;
+  background: #ffffff;
+  color: #111827;
+  z-index: -1;
+}
+
+.bp-temp-export-title {
+  font-size: 18px;
+  font-weight: 800;
+  margin-bottom: 12px;
+  color: #111827;
+}
+
+.bp-temp-export-section {
+  margin-bottom: 18px;
+  background: #ffffff;
+}
+
+.bp-temp-export-section-title {
+  font-size: 15px;
+  font-weight: 700;
+  margin: 8px 0;
+  padding: 6px 8px;
+  color: #1e293b;
+  background: #e2e8f0;
+  border-radius: 4px;
+}
+
+.bp-temp-export-table {
+  border-collapse: collapse;
+  background: #ffffff;
+}
+
+.bp-temp-export-table th,
+.bp-temp-export-table td {
+  background-clip: padding-box;
 }

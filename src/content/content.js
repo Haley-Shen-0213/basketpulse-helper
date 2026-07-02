@@ -15,25 +15,26 @@ function bpDebugTable(...args) {
 function main() {
   bpDebugLog("[BasketPulse Helper] content script loaded");
 
-  if (!isSkillsPage()) {
-    bpDebugLog("[BasketPulse Helper] not skills page");
+  if (!isSupportedBasketPulsePage()) {
+    bpDebugLog("[BasketPulse Helper] not supported BasketPulse page");
     return;
   }
 
   waitForTableAndInit();
 }
 
+
 const BP_BASE_URL = "https://www.basketpulse.com";
 const TRAINING_OVERVIEW_URL = `${BP_BASE_URL}/tw/Training/overview`;
 
 const TRAINING_OVERVIEW_HTML_CACHE_KEY = "bp_training_overview_html";
 const TRAINING_OVERVIEW_HTML_CACHE_TIME_KEY = "bp_training_overview_html_time";
-
-/**
- * 訓練總覽 HTML 快取時間。
- * 目前設定 10 分鐘。
- */
 const TRAINING_OVERVIEW_CACHE_MAX_AGE = 10 * 60 * 1000;
+
+const EXPORT_RANGE_MAIN = "main";
+const EXPORT_RANGE_LOAN = "loan";
+const EXPORT_RANGE_ALL = "all";
+const EXPORT_RANGE_SELECTED = "selected";
 
 const SKILL_COLUMNS = [
   "health",
@@ -70,7 +71,25 @@ const SKILL_LABELS = {
 };
 
 /**
- * 判斷目前是否為 BasketPulse 球員技能頁
+ * 判斷目前是否為 BasketPulse Helper 支援頁面。
+ *
+ * 支援頁面：
+ * 1. 球員技能頁
+ *    https://www.basketpulse.com/tw/Players/skills
+ *
+ * 2. 學校頁面
+ *    https://www.basketpulse.com/tw/School/main
+ */
+function isSupportedBasketPulsePage() {
+  return location.hostname === "www.basketpulse.com"
+    && (
+      location.pathname.includes("/Players/skills")
+      || location.pathname.includes("/School/main")
+    );
+}
+
+/**
+ * 是否為球員技能頁
  */
 function isSkillsPage() {
   return location.hostname === "www.basketpulse.com"
@@ -78,8 +97,14 @@ function isSkillsPage() {
 }
 
 /**
- * 等待表格出現後初始化
+ * 是否為學校頁面
  */
+function isSchoolMainPage() {
+  return location.hostname === "www.basketpulse.com"
+    && location.pathname.includes("/School/main");
+}
+
+
 function waitForTableAndInit() {
   const tables = findPlayerSkillTables();
 
@@ -110,31 +135,24 @@ function waitForTableAndInit() {
 }
 
 /**
- * 尋找頁面上所有球員技能表格。
+ * 尋找頁面上所有包含球員的表格。
  *
- * 包含：
- * 1. 上方球員名單
- * 2. 下方出借球員
+ * 支援：
+ * - /tw/Players/skills
+ * - /tw/School/main
  *
  * 判斷方式：
- * 只要 table 裡有 /Player/{id}/description 連結，就視為球員表格。
+ * 只要 table 裡面有 /Player/{id} 相關連結，就視為球員表格。
  */
 function findPlayerSkillTables() {
   const tables = [...document.querySelectorAll("table")];
 
   return tables.filter(table => {
-    return table.querySelector('a[href*="/Player/"][href*="/description"]');
+    return table.querySelector('a[href*="/Player/"]');
   });
 }
 
-/**
- * 初始化球員技能頁
- *
- * 注意：
- * 這裡只建立工具列與擴充列。
- * 不會自動讀取訓練總覽。
- * 玩家需要自行按按鈕才會執行讀取。
- */
+
 function initSkillsPage(tables) {
   if (!tables || tables.length === 0) {
     console.warn("[BasketPulse Helper] tables is empty");
@@ -148,17 +166,7 @@ function initSkillsPage(tables) {
 
   document.body.dataset.bpHelperInit = "1";
 
-  bpDebugLog("[BasketPulse Helper] init skills page");
-
   const players = parsePlayersFromTables(tables);
-
-  bpDebugLog("[BasketPulse Helper] players:", players.map(player => ({
-    id: player.id,
-    name: player.name,
-    href: player.href,
-    tableIndex: player.tableIndex,
-    isLoanLike: player.isLoanLike
-  })));
 
   if (players.length === 0) {
     console.warn("[BasketPulse Helper] 沒有解析到任何球員");
@@ -174,16 +182,10 @@ function initSkillsPage(tables) {
     enhanceTable(table, tablePlayers);
   });
 
-  setStatusText(`已準備完成，共偵測到 ${players.length} 位球員，請點選「載入潛力 / 訓練資料」`);
+  const pageLabel = isSchoolMainPage() ? "學校頁面" : "球員技能頁";
+  setStatusText(`${pageLabel} 已準備完成，共偵測到 ${players.length} 位球員`);
 }
 
-/**
- * 從多個球員技能表格解析球員。
- *
- * 會包含：
- * - 球員名單
- * - 出借球員
- */
 function parsePlayersFromTables(tables) {
   const seenPlayerIds = new Set();
   const players = [];
@@ -192,9 +194,6 @@ function parsePlayersFromTables(tables) {
     const tablePlayers = parsePlayersFromOneTable(table, tableIndex);
 
     tablePlayers.forEach(player => {
-      /**
-       * 如果同一個球員在頁面上重複出現，只保留第一筆。
-       */
       if (seenPlayerIds.has(player.id)) {
         return;
       }
@@ -209,6 +208,16 @@ function parsePlayersFromTables(tables) {
 
 /**
  * 從單一 table 解析球員。
+ *
+ * 支援 href：
+ * - /tw/Player/{id}/description
+ * - /Player/{id}/description
+ * - /tw/Player/{id}
+ * - /Player/{id}
+ *
+ * 這樣可以同時支援：
+ * - 球員技能頁
+ * - 學校頁面 School/main
  */
 function parsePlayersFromOneTable(table, tableIndex) {
   const rows = [...table.querySelectorAll("tbody tr")];
@@ -216,11 +225,11 @@ function parsePlayersFromOneTable(table, tableIndex) {
   return rows
     .map(row => {
       const link =
-        row.querySelector("a.huge-table__player[href*='/Player/'][href*='/description']")
-        || row.querySelector("a[href*='/Player/'][href*='/description']");
+        row.querySelector("a.huge-table__player[href*='/Player/']")
+        || row.querySelector("a[href*='/Player/']");
 
       const href = link?.getAttribute("href") || "";
-      const match = href.match(/\/Player\/(\d+)\/description/);
+      const match = href.match(/\/Player\/(\d+)/);
 
       const playerId = match?.[1] || "";
       const playerName = normalizeText(link?.textContent || "");
@@ -232,20 +241,16 @@ function parsePlayersFromOneTable(table, tableIndex) {
         row,
         table,
         tableIndex,
-        isLoanLike: isLoanLikePlayerRow(row, table)
+        isLoanLike: tableIndex > 0 || isLoanLikePlayerRow(row, table)
       };
     })
     .filter(player => player.id && player.name);
 }
 
-/**
- * 判斷該列是否可能是出租 / 出借球員。
- * 目前只做標記，不影響功能。
- */
+
 function isLoanLikePlayerRow(row, table) {
   const rowText = normalizeText(row?.textContent || "");
   const rowClassName = row?.getAttribute("class") || "";
-
   const tableTitleText = getTextNearTableTitle(table);
 
   return /出租|出借|租借|loan|Loan|LOAN/i.test(rowText)
@@ -253,10 +258,6 @@ function isLoanLikePlayerRow(row, table) {
     || /出租|出借|租借|loan/i.test(tableTitleText);
 }
 
-/**
- * 取得 table 附近的標題文字。
- * 用於判斷該 table 是否為「出借球員」區塊。
- */
 function getTextNearTableTitle(table) {
   if (!table) return "";
 
@@ -274,15 +275,39 @@ function getTextNearTableTitle(table) {
 }
 
 /**
- * 新增工具列
+ * 判斷目前頁面是否有出借 / 租借球員區塊。
+ *
+ * 判斷規則：
+ * 1. 如果有球員來自第二個以上 table，視為有出借區塊。
+ * 2. 如果玩家列被判斷為 loan-like，也視為有出借區塊。
+ *
+ * 用途：
+ * - 有出借區塊時，匯出範圍顯示：
+ *   主要球員 / 出借球員 / 全部球員 / 自選球員
+ *
+ * - 沒有出借區塊時，匯出範圍只顯示：
+ *   全部球員 / 自選球員
  */
+function hasLoanPlayersSection(players) {
+  if (!players || players.length === 0) {
+    return false;
+  }
+
+  return players.some(player => {
+    return Number(player.tableIndex) > 0 || player.isLoanLike === true;
+  });
+}
+
 function addToolbar(table, players) {
   if (document.querySelector("#bp-helper-toolbar")) {
     return;
   }
 
+  const hasLoanSection = hasLoanPlayersSection(players);
+
   const toolbar = document.createElement("div");
   toolbar.id = "bp-helper-toolbar";
+  toolbar.dataset.hasLoanSection = hasLoanSection ? "1" : "0";
 
   const title = document.createElement("span");
   title.className = "bp-helper-title";
@@ -306,11 +331,89 @@ function addToolbar(table, players) {
     alert("已更新資料快取，請再次點選「載入潛力 / 訓練資料」。");
   });
 
-  const exportMainImageBtn = document.createElement("button");
-  exportMainImageBtn.textContent = "匯出圖片";
-  exportMainImageBtn.title = "將主要球員名單匯出成 PNG 圖片";
-  exportMainImageBtn.addEventListener("click", async () => {
-    await exportMainPlayersTableImage();
+  const exportRangeLabel = document.createElement("span");
+  exportRangeLabel.className = "bp-export-range-label";
+  exportRangeLabel.textContent = "匯出範圍";
+
+  const exportRangeSelect = document.createElement("select");
+  exportRangeSelect.id = "bp-helper-export-range";
+  exportRangeSelect.title = "選擇要匯出的球員範圍";
+
+  /**
+   * 第二版修正：
+   * 如果頁面沒有出借 / 租借球員區塊，
+   * 就不顯示「主要球員」與「出借球員」。
+   *
+   * 沒有出借區塊時只保留：
+   * - 全部球員
+   * - 自選球員
+   */
+  if (hasLoanSection) {
+    exportRangeSelect.innerHTML = `
+      <option value="${EXPORT_RANGE_MAIN}">主要球員</option>
+      <option value="${EXPORT_RANGE_LOAN}">出借球員</option>
+      <option value="${EXPORT_RANGE_ALL}">全部球員</option>
+      <option value="${EXPORT_RANGE_SELECTED}">自選球員</option>
+    `;
+  } else {
+    exportRangeSelect.innerHTML = `
+      <option value="${EXPORT_RANGE_ALL}">全部球員</option>
+      <option value="${EXPORT_RANGE_SELECTED}">自選球員</option>
+    `;
+  }
+
+  exportRangeSelect.addEventListener("change", () => {
+    updateExportCustomMode();
+  });
+
+  const selectAllBtn = document.createElement("button");
+  selectAllBtn.textContent = "全選";
+  selectAllBtn.className = "bp-selected-only-control";
+  selectAllBtn.title = "勾選所有球員";
+  selectAllBtn.style.display = "none";
+  selectAllBtn.addEventListener("click", () => {
+    setAllExportCheckboxesChecked(true);
+    setStatusText("已全選所有球員");
+  });
+
+  const unselectAllBtn = document.createElement("button");
+  unselectAllBtn.textContent = "取消全選";
+  unselectAllBtn.className = "bp-selected-only-control";
+  unselectAllBtn.title = "取消勾選所有球員";
+  unselectAllBtn.style.display = "none";
+  unselectAllBtn.addEventListener("click", () => {
+    setAllExportCheckboxesChecked(false);
+    setStatusText("已取消全選所有球員");
+  });
+
+  const selectMainBtn = document.createElement("button");
+  selectMainBtn.textContent = "只選主要";
+  selectMainBtn.className = "bp-selected-only-control bp-loan-section-only-control";
+  selectMainBtn.title = "只勾選主要球員";
+  selectMainBtn.style.display = "none";
+  selectMainBtn.dataset.requiresLoanSection = "1";
+  selectMainBtn.addEventListener("click", () => {
+    selectPlayersByTableType("main");
+    setStatusText("已選取主要球員");
+  });
+
+  const selectLoanBtn = document.createElement("button");
+  selectLoanBtn.textContent = "只選出借";
+  selectLoanBtn.className = "bp-selected-only-control bp-loan-section-only-control";
+  selectLoanBtn.title = "只勾選出借球員";
+  selectLoanBtn.style.display = "none";
+  selectLoanBtn.dataset.requiresLoanSection = "1";
+  selectLoanBtn.addEventListener("click", () => {
+    selectPlayersByTableType("loan");
+    setStatusText("已選取出借球員");
+  });
+
+  const exportImageBtn = document.createElement("button");
+  exportImageBtn.textContent = "匯出圖片";
+  exportImageBtn.title = "依照匯出範圍匯出 PNG 圖片";
+  exportImageBtn.addEventListener("click", async () => {
+    const range = getSelectedExportRange();
+    await exportPlayersTableImageByRange(range);
   });
 
   const toggleBtn = document.createElement("button");
@@ -324,10 +427,6 @@ function addToolbar(table, players) {
     document
       .querySelectorAll(".bp-analysis-row, .bp-training-row")
       .forEach(row => {
-        /**
-         * 只有有資料的列才參與顯示 / 隱藏。
-         * 沒資料的列永遠保持隱藏。
-         */
         if (row.dataset.hasData !== "1") {
           row.style.display = "none";
           return;
@@ -350,17 +449,31 @@ function addToolbar(table, players) {
   toolbar.appendChild(title);
   toolbar.appendChild(loadAllBtn);
   toolbar.appendChild(clearCacheBtn);
-  toolbar.appendChild(exportMainImageBtn);
+  toolbar.appendChild(exportRangeLabel);
+  toolbar.appendChild(exportRangeSelect);
+  toolbar.appendChild(selectAllBtn);
+  toolbar.appendChild(unselectAllBtn);
+
+  /**
+   * 只有真的有出借 / 租借區塊時，
+   * 才加入「只選主要」與「只選出借」兩個快速選取按鈕。
+   */
+  if (hasLoanSection) {
+    toolbar.appendChild(selectMainBtn);
+    toolbar.appendChild(selectLoanBtn);
+  }
+
+  toolbar.appendChild(exportImageBtn);
   toolbar.appendChild(toggleBtn);
   toolbar.appendChild(status);
 
   const insertTarget = findToolbarInsertTarget(table);
   insertTarget.after(toolbar);
+
+  updateExportCustomMode();
 }
 
-/**
- * 找工具列插入位置
- */
+
 function findToolbarInsertTarget(table) {
   const title = document.querySelector(".content-top__title");
   if (title) return title;
@@ -371,9 +484,6 @@ function findToolbarInsertTarget(table) {
   return table;
 }
 
-/**
- * 增強表格：每個球員列下面插入兩列
- */
 function enhanceTable(table, players) {
   players.forEach(player => {
     if (player.row.dataset.bpEnhanced === "1") {
@@ -383,35 +493,59 @@ function enhanceTable(table, players) {
     player.row.dataset.bpEnhanced = "1";
     player.row.classList.add("bp-original-player-row");
     player.row.dataset.playerId = player.id;
+    player.row.dataset.playerName = player.name;
+    player.row.dataset.tableIndex = String(player.tableIndex);
+    player.row.dataset.exportGroup = player.tableIndex === 0 ? "main" : "loan";
+
+    addPlayerExportCheckbox(player);
 
     const analysisRow = createExtraRow(table, "潛力素質", "bp-analysis-row");
     const trainingRow = createExtraRow(table, "訓練結果", "bp-training-row");
 
     analysisRow.dataset.playerId = player.id;
     analysisRow.dataset.playerName = player.name;
+    analysisRow.dataset.tableIndex = String(player.tableIndex);
+    analysisRow.dataset.exportGroup = player.tableIndex === 0 ? "main" : "loan";
 
     trainingRow.dataset.playerId = player.id;
     trainingRow.dataset.playerName = player.name;
+    trainingRow.dataset.tableIndex = String(player.tableIndex);
+    trainingRow.dataset.exportGroup = player.tableIndex === 0 ? "main" : "loan";
 
-    /**
-     * 插入順序：
-     * 原球員列
-     * 潛力素質列
-     * 訓練結果列
-     */
     player.row.after(trainingRow);
     player.row.after(analysisRow);
   });
 }
 
-/**
- * 建立額外列
- *
- * 需求：
- * - 初始狀態隱藏。
- * - 沒資料時保持隱藏，不佔空間。
- * - 有資料時才顯示。
- */
+function addPlayerExportCheckbox(player) {
+  if (!player || !player.row) return;
+
+  const firstCell = player.row.querySelector("td");
+
+  if (!firstCell) return;
+
+  if (firstCell.querySelector(".bp-export-checkbox-wrap")) {
+    return;
+  }
+
+  const wrap = document.createElement("label");
+  wrap.className = "bp-export-checkbox-wrap";
+  wrap.title = "勾選後可用「自選球員」匯出";
+
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.className = "bp-export-player-checkbox";
+  checkbox.dataset.playerId = player.id;
+  checkbox.dataset.playerName = player.name;
+  checkbox.dataset.tableIndex = String(player.tableIndex);
+  checkbox.dataset.exportGroup = player.tableIndex === 0 ? "main" : "loan";
+  checkbox.checked = true;
+
+  wrap.appendChild(checkbox);
+
+  firstCell.prepend(wrap);
+}
+
 function createExtraRow(table, label, className) {
   const headers = [...table.querySelectorAll("thead th")];
 
@@ -430,11 +564,6 @@ function createExtraRow(table, label, className) {
 
   const tr = document.createElement("tr");
   tr.className = className;
-
-  /**
-   * 預設隱藏。
-   * 讀取後若整列有資料，fillExtraRow() 會顯示。
-   */
   tr.style.display = "none";
   tr.dataset.hasData = "0";
 
@@ -450,26 +579,13 @@ function createExtraRow(table, label, className) {
     td.className = "bp-extra-cell bp-neutral";
     td.dataset.colName = skillKey;
     td.title = SKILL_LABELS[skillKey] || skillKey;
-
-    /**
-     * 初始狀態空白。
-     */
     td.textContent = "";
-
     tr.appendChild(td);
   });
 
   return tr;
 }
 
-/**
- * 讀取全隊球員訓練總覽
- *
- * 加速重點：
- * - 只抓一次 Training overview HTML。
- * - 使用快取。
- * - 同一份 HTML 解析所有球員。
- */
 async function loadAllPlayersTrainingOverview(players) {
   if (!players || players.length === 0) {
     alert("沒有球員可載入");
@@ -510,7 +626,6 @@ async function loadAllPlayersTrainingOverview(players) {
     setStatusText(`載入完成：成功 ${successCount} 位，無資料 ${noDataCount} 位，錯誤 ${errorCount} 位`);
   } catch (error) {
     console.error("[BasketPulse Helper] 載入潛力 / 訓練資料失敗:", error);
-
     setStatusText(`載入失敗：${error.message || error}`);
     alert(`載入失敗：${error.message || error}`);
   } finally {
@@ -518,12 +633,6 @@ async function loadAllPlayersTrainingOverview(players) {
   }
 }
 
-/**
- * 載入單一球員的訓練總覽資料。
- *
- * 正式版工具列已不提供單一球員測試按鈕，
- * 但保留此 function 方便未來維護或擴充。
- */
 async function loadOnePlayerTrainingOverview(player) {
   const analysisRow = document.querySelector(`.bp-analysis-row[data-player-id="${player.id}"]`);
   const trainingRow = document.querySelector(`.bp-training-row[data-player-id="${player.id}"]`);
@@ -540,18 +649,9 @@ async function loadOnePlayerTrainingOverview(player) {
   try {
     const data = await fetchAndParseTrainingOverviewForPlayer(player.id);
 
-    bpDebugLog("[BasketPulse Helper] training overview player data:", {
-      player,
-      data
-    });
-
     if (!data) {
-      /**
-       * 找不到資料時保持隱藏，不佔空間。
-       */
       clearExtraRow(analysisRow);
       clearExtraRow(trainingRow);
-
       setStatusText(`訓練總覽找不到 ${player.name}，已略過`);
       return false;
     }
@@ -560,7 +660,6 @@ async function loadOnePlayerTrainingOverview(player) {
     fillExtraRow(trainingRow, data.training);
 
     setStatusText(`已完成 ${player.name}：潛力與訓練成果已填入`);
-
     return true;
   } catch (error) {
     console.error("[BasketPulse Helper] 訓練總覽解析錯誤:", player, error);
@@ -573,10 +672,6 @@ async function loadOnePlayerTrainingOverview(player) {
   }
 }
 
-/**
- * 使用已抓好的 HTML 載入單一球員。
- * 給全隊讀取使用，避免每位球員都重新 fetch。
- */
 async function loadOnePlayerTrainingOverviewFromHtml(player, html, options = {}) {
   const analysisRow = document.querySelector(`.bp-analysis-row[data-player-id="${player.id}"]`);
   const trainingRow = document.querySelector(`.bp-training-row[data-player-id="${player.id}"]`);
@@ -594,11 +689,6 @@ async function loadOnePlayerTrainingOverviewFromHtml(player, html, options = {})
 
   const data = parseTrainingOverviewHtmlForPlayer(html, player.id);
 
-  bpDebugLog("[BasketPulse Helper] training overview player data:", {
-    player,
-    data
-  });
-
   if (!data) {
     clearExtraRow(analysisRow);
     clearExtraRow(trainingRow);
@@ -608,10 +698,6 @@ async function loadOnePlayerTrainingOverviewFromHtml(player, html, options = {})
   fillExtraRow(analysisRow, data.potential);
   fillExtraRow(trainingRow, data.training);
 
-  /**
-   * 如果該球員潛力與訓練都完全沒有資料，
-   * 也算作無資料。
-   */
   if (!hasAnySkillValue(data.potential) && !hasAnySkillValue(data.training)) {
     return false;
   }
@@ -619,26 +705,11 @@ async function loadOnePlayerTrainingOverviewFromHtml(player, html, options = {})
   return true;
 }
 
-/**
- * 抓訓練總覽並解析指定球員
- */
 async function fetchAndParseTrainingOverviewForPlayer(playerId) {
-  bpDebugLog("[BasketPulse Helper] get training overview:", TRAINING_OVERVIEW_URL);
-
   const html = await getTrainingOverviewHtmlWithCache();
-
-  const data = parseTrainingOverviewHtmlForPlayer(html, playerId);
-
-  return data;
+  return parseTrainingOverviewHtmlForPlayer(html, playerId);
 }
 
-/**
- * 取得訓練總覽 HTML。
- *
- * 加速策略：
- * - 10 分鐘內使用 chrome.storage.local 快取。
- * - 避免反覆 fetch 重頁面。
- */
 async function getTrainingOverviewHtmlWithCache() {
   const cached = await chrome.storage.local.get([
     TRAINING_OVERVIEW_HTML_CACHE_KEY,
@@ -655,8 +726,6 @@ async function getTrainingOverviewHtmlWithCache() {
     return cachedHtml;
   }
 
-  bpDebugLog("[BasketPulse Helper] fetch fresh training overview html:", TRAINING_OVERVIEW_URL);
-
   const html = await fetchHtmlByBackground(TRAINING_OVERVIEW_URL);
 
   await chrome.storage.local.set({
@@ -667,9 +736,6 @@ async function getTrainingOverviewHtmlWithCache() {
   return html;
 }
 
-/**
- * 清除訓練總覽 HTML 快取
- */
 async function clearTrainingOverviewCache() {
   await chrome.storage.local.remove([
     TRAINING_OVERVIEW_HTML_CACHE_KEY,
@@ -677,30 +743,6 @@ async function clearTrainingOverviewCache() {
   ]);
 }
 
-/**
- * 從訓練總覽 HTML 解析指定球員
- *
- * 回傳格式：
- * {
- *   playerId,
- *   playerName,
- *   potential: {
- *     health: "+69%",
- *     jump: "+5%",
- *     ...
- *   },
- *   training: {
- *     health: "+2",
- *     exp: "+3",
- *     ...
- *   },
- *   values: {
- *     health: "100%",
- *     exp: "11",
- *     ...
- *   }
- * }
- */
 function parseTrainingOverviewHtmlForPlayer(html, playerId) {
   const doc = new DOMParser().parseFromString(html, "text/html");
 
@@ -715,14 +757,12 @@ function parseTrainingOverviewHtmlForPlayer(html, playerId) {
   const row = playerLink.closest("tr");
 
   if (!row) {
-    bpDebugLog("[BasketPulse Helper] player link has no row:", playerId);
     return null;
   }
 
   const table = row.closest("table");
 
   if (!table) {
-    bpDebugLog("[BasketPulse Helper] player row has no table:", playerId);
     return null;
   }
 
@@ -733,8 +773,6 @@ function parseTrainingOverviewHtmlForPlayer(html, playerId) {
       title: th.getAttribute("title") || normalizeText(th.textContent || "")
     };
   });
-
-  bpDebugLog("[BasketPulse Helper] training overview headers:", headers);
 
   const cells = [...row.children];
 
@@ -763,50 +801,27 @@ function parseTrainingOverviewHtmlForPlayer(html, playerId) {
     const trainingValue = extractTrainingGainFromTrainingOverviewCell(cell);
 
     values[key] = mainValue || null;
-
-    /**
-     * 潛力不是一定會有。
-     * 沒有就保持 null，畫面會隱藏空資料列。
-     */
     potential[key] = potentialValue || null;
-
-    /**
-     * 訓練成果不是一定會有。
-     * 新球員或未訓練欄位保持 null，畫面會隱藏空資料列。
-     */
     training[key] = trainingValue || null;
   });
 
   const playerName = normalizeText(playerLink.textContent || "");
 
-  const result = {
+  return {
     playerId: String(playerId),
     playerName,
     potential,
     training,
     values
   };
-
-  bpDebugLog("[BasketPulse Helper] parsed training overview result:", result);
-
-  return result;
 }
 
-/**
- * 在訓練總覽 HTML 裡尋找球員連結。
- *
- * 為了兼容不同語系或出租球員區塊，
- * 不限定 href 結尾完全一樣，只要包含 /Player/{id}/ 且含 description 即可。
- */
 function findPlayerLinkInTrainingOverviewDoc(doc, playerId) {
   return doc.querySelector(`a[href*="/Player/${playerId}/"][href*="description"]`)
     || doc.querySelector(`a[href*="/Player/${playerId}/description"]`)
     || doc.querySelector(`a[href*="/Player/${playerId}"]`);
 }
 
-/**
- * 解析訓練總覽表頭 key
- */
 function normalizeTrainingOverviewHeaderKey(th) {
   if (!th) return "";
 
@@ -870,21 +885,10 @@ function normalizeTrainingOverviewHeaderKey(th) {
   return map[raw] || map[text] || map[title] || raw;
 }
 
-/**
- * 從訓練總覽 td 解析潛力
- *
- * 來源範例：
- * <td title="潛力: +69%">
- *
- * 注意：
- * - 有些球員不會有潛力。
- * - 沒有時回傳 null。
- */
 function extractPotentialFromTrainingOverviewCell(cell) {
   if (!cell) return null;
 
   const title = cell.getAttribute("title") || "";
-
   const match = title.match(/潛力\s*[:：]\s*([+-]?\d+\s*%)/);
 
   if (!match) {
@@ -894,21 +898,9 @@ function extractPotentialFromTrainingOverviewCell(cell) {
   return normalizePercentValue(match[1]);
 }
 
-/**
- * 從訓練總覽 td 解析最新訓練進步點數
- *
- * 注意：
- * - 新球員可能沒有訓練資料。
- * - 沒資料時回傳 null。
- * - 不直接依賴整格文字，避免抓錯。
- */
 function extractTrainingGainFromTrainingOverviewCell(cell) {
   if (!cell) return null;
 
-  /**
-   * 第一優先：
-   * 從技能區塊中找 span[title="進步點數"]。
-   */
   const skillBlock = cell.querySelector(".training__skill-block");
 
   if (skillBlock) {
@@ -921,10 +913,6 @@ function extractTrainingGainFromTrainingOverviewCell(cell) {
     }
   }
 
-  /**
-   * 第二優先：
-   * 直接從 cell 找所有進步點數。
-   */
   const fallbackValues = [...cell.querySelectorAll('span[title="進步點數"]')]
     .map(span => normalizeText(span.textContent || ""))
     .filter(value => /^[+-]\d+$/.test(value));
@@ -936,11 +924,6 @@ function extractTrainingGainFromTrainingOverviewCell(cell) {
   return null;
 }
 
-/**
- * 印出訓練總覽中所有球員連結。
- *
- * 正式版預設不輸出，只有 BP_HELPER_DEBUG = true 時才會印出。
- */
 function debugPrintTrainingOverviewPlayerLinks(doc) {
   if (!BP_HELPER_DEBUG) {
     return;
@@ -964,9 +947,6 @@ function debugPrintTrainingOverviewPlayerLinks(doc) {
   bpDebugTable(links);
 }
 
-/**
- * 透過 background 抓 HTML
- */
 function fetchHtmlByBackground(url) {
   return new Promise((resolve, reject) => {
     if (!url || typeof url !== "string" || !url.trim()) {
@@ -996,14 +976,6 @@ function fetchHtmlByBackground(url) {
   });
 }
 
-/**
- * 填入額外列資料
- *
- * 重點：
- * - value 沒有時顯示空白。
- * - 不顯示 "-"。
- * - 如果整列都沒有資料，直接隱藏該列。
- */
 function fillExtraRow(row, data) {
   if (!row) return;
 
@@ -1045,9 +1017,6 @@ function fillExtraRow(row, data) {
   }
 }
 
-/**
- * 清空額外列，並隱藏。
- */
 function clearExtraRow(row) {
   if (!row) return;
 
@@ -1068,9 +1037,6 @@ function clearExtraRow(row) {
   row.dataset.hasData = "0";
 }
 
-/**
- * 設定某列為讀取中
- */
 function setRowLoading(row) {
   if (!row) return;
 
@@ -1091,19 +1057,10 @@ function setRowLoading(row) {
   });
 }
 
-/**
- * 設定某列為無資料。
- *
- * 需求：
- * - 無資料時完全隱藏。
- */
 function setRowNoData(row) {
   clearExtraRow(row);
 }
 
-/**
- * 設定某列為錯誤
- */
 function setRowError(row) {
   if (!row) return;
 
@@ -1124,9 +1081,6 @@ function setRowError(row) {
   });
 }
 
-/**
- * 建立空技能資料
- */
 function createEmptySkillData() {
   return {
     health: null,
@@ -1146,9 +1100,6 @@ function createEmptySkillData() {
   };
 }
 
-/**
- * 檢查技能資料是否有任何有效值
- */
 function hasAnySkillValue(data) {
   if (!data) return false;
 
@@ -1158,9 +1109,6 @@ function hasAnySkillValue(data) {
   });
 }
 
-/**
- * 設定狀態文字
- */
 function setStatusText(text) {
   const status = document.querySelector("#bp-helper-status");
 
@@ -1169,9 +1117,6 @@ function setStatusText(text) {
   }
 }
 
-/**
- * 設定按鈕忙碌狀態
- */
 function setButtonBusy(button, isBusy) {
   if (!button) return;
 
@@ -1186,32 +1131,141 @@ function setButtonBusy(button, isBusy) {
 }
 
 /**
- * 匯出主要球員表格為 PNG 圖片。
- *
- * 只匯出上方主要球員名單，不包含出借球員。
+ * 第二版新增：
+ * 取得目前選擇的匯出範圍
  */
-async function exportMainPlayersTableImage() {
+function getSelectedExportRange() {
+  return document.querySelector("#bp-helper-export-range")?.value || EXPORT_RANGE_ALL;
+}
+
+
+/**
+ * 第二版新增：
+ * 切換自選球員模式。
+ * 選擇「自選球員」時顯示 checkbox 與輔助按鈕。
+ */
+function updateExportCustomMode() {
+  const range = getSelectedExportRange();
+  const isSelectedMode = range === EXPORT_RANGE_SELECTED;
+  const hasLoanSection = document.querySelector("#bp-helper-toolbar")?.dataset.hasLoanSection === "1";
+
+  document.body.classList.toggle("bp-export-custom-mode", isSelectedMode);
+
+  document.querySelectorAll(".bp-selected-only-control").forEach(button => {
+    const requiresLoanSection = button.dataset.requiresLoanSection === "1";
+
+    /**
+     * 第二版修正：
+     * 自選模式下才顯示快速選取按鈕。
+     * 但如果頁面沒有出借區塊，
+     * 就不要顯示「只選主要」與「只選出借」。
+     */
+    if (!isSelectedMode) {
+      button.style.display = "none";
+      return;
+    }
+
+    if (requiresLoanSection && !hasLoanSection) {
+      button.style.display = "none";
+      return;
+    }
+
+    button.style.display = "";
+  });
+
+  if (isSelectedMode) {
+    setStatusText("自選球員模式：請勾選要匯出的球員");
+  } else {
+    const labelMap = {
+      [EXPORT_RANGE_MAIN]: "主要球員",
+      [EXPORT_RANGE_LOAN]: "出借球員",
+      [EXPORT_RANGE_ALL]: "全部球員"
+    };
+
+    setStatusText(`匯出範圍：${labelMap[range] || "全部球員"}`);
+  }
+}
+
+
+function setAllExportCheckboxesChecked(checked) {
+  document.querySelectorAll(".bp-export-player-checkbox").forEach(checkbox => {
+    checkbox.checked = checked;
+  });
+}
+
+function selectPlayersByTableType(type) {
+  document.querySelectorAll(".bp-export-player-checkbox").forEach(checkbox => {
+    const group = checkbox.dataset.exportGroup;
+
+    if (type === "main") {
+      checkbox.checked = group === "main";
+    } else if (type === "loan") {
+      checkbox.checked = group === "loan";
+    }
+  });
+}
+
+/**
+ * 第二版新增：
+ * 依照匯出範圍匯出圖片
+ */
+async function exportPlayersTableImageByRange(range) {
   let restore = null;
+  let temporaryElement = null;
 
   try {
+    const hasLoanSection = document.querySelector("#bp-helper-toolbar")?.dataset.hasLoanSection === "1";
+
+    /**
+     * 如果頁面沒有出借 / 租借球員區塊，
+     * 不使用「主要球員」或「出借球員」這種分區匯出，
+     * 一律轉成「全部球員」。
+     */
+    if (!hasLoanSection && (range === EXPORT_RANGE_MAIN || range === EXPORT_RANGE_LOAN)) {
+      range = EXPORT_RANGE_ALL;
+    }
+
     if (typeof html2canvas !== "function") {
       alert("找不到 html2canvas，請確認 manifest.json 已載入 src/vendor/html2canvas.min.js");
       return;
     }
 
-    setStatusText("正在產生主要球員圖片...");
+    const rangeLabel = getExportRangeLabel(range);
 
-    const exportTarget = findMainPlayersExportTarget();
+    setStatusText(`正在產生圖片：${rangeLabel}...`);
+
+    let exportTarget = null;
+
+    if (range === EXPORT_RANGE_MAIN) {
+      exportTarget = findMainPlayersExportTarget();
+    } else if (range === EXPORT_RANGE_LOAN) {
+      exportTarget = findLoanPlayersExportTarget();
+    } else if (range === EXPORT_RANGE_ALL) {
+      temporaryElement = createTemporaryExportElementByRange(EXPORT_RANGE_ALL);
+      exportTarget = temporaryElement;
+    } else if (range === EXPORT_RANGE_SELECTED) {
+      temporaryElement = createTemporaryExportElementByRange(EXPORT_RANGE_SELECTED);
+      exportTarget = temporaryElement;
+    } else {
+      /**
+       * 預設改成全部球員。
+       * 尤其 School/main 頁面通常沒有主要 / 出借分區，
+       * 用全部球員會比較符合使用者期待。
+       */
+      temporaryElement = createTemporaryExportElementByRange(EXPORT_RANGE_ALL);
+      exportTarget = temporaryElement;
+    }
 
     if (!exportTarget) {
-      alert("找不到主要球員表格，無法匯出圖片");
-      setStatusText("匯出失敗：找不到主要球員表格");
+      alert(`找不到可匯出的範圍：${rangeLabel}`);
+      setStatusText(`匯出失敗：找不到${rangeLabel}`);
       return;
     }
 
-    /**
-     * 匯出前暫時調整，避免 sticky / transform / overflow 影響截圖。
-     */
+    if (temporaryElement) {
+      document.body.appendChild(temporaryElement);
+    }
+
     restore = prepareElementForImageExport(exportTarget);
 
     const canvas = await html2canvas(exportTarget, {
@@ -1231,7 +1285,12 @@ async function exportMainPlayersTableImage() {
       restore = null;
     }
 
-    const filename = createExportImageFilename();
+    if (temporaryElement) {
+      temporaryElement.remove();
+      temporaryElement = null;
+    }
+
+    const filename = createExportImageFilename(rangeLabel);
 
     downloadCanvasAsPng(canvas, filename);
 
@@ -1241,21 +1300,28 @@ async function exportMainPlayersTableImage() {
       restore();
     }
 
-    console.error("[BasketPulse Helper] 匯出主要球員圖片失敗:", error);
+    if (temporaryElement) {
+      temporaryElement.remove();
+    }
+
+    console.error("[BasketPulse Helper] 匯出圖片失敗:", error);
 
     setStatusText(`匯出圖片失敗：${error.message || error}`);
     alert(`匯出圖片失敗：${error.message || error}`);
   }
 }
 
-/**
- * 找主要球員匯出目標。
- *
- * 目前邏輯：
- * 1. 找第一個球員技能 table。
- * 2. 盡量往外找包含標題「球員名單」的容器。
- * 3. 找不到容器時就只匯出 table。
- */
+function getExportRangeLabel(range) {
+  const map = {
+    [EXPORT_RANGE_MAIN]: "主要球員",
+    [EXPORT_RANGE_LOAN]: "出借球員",
+    [EXPORT_RANGE_ALL]: "全部球員",
+    [EXPORT_RANGE_SELECTED]: "自選球員"
+  };
+
+  return map[range] || "主要球員";
+}
+
 function findMainPlayersExportTarget() {
   const tables = findPlayerSkillTables();
 
@@ -1263,31 +1329,215 @@ function findMainPlayersExportTarget() {
     return null;
   }
 
-  const mainTable = tables[0];
+  return findBestExportContainerForTable(tables[0]);
+}
 
-  /**
-   * 常見情況：表格外層會有 card / panel / content block。
-   * 往上找較完整的容器，讓匯出包含「球員名單」標題。
-   */
+function findLoanPlayersExportTarget() {
+  const tables = findPlayerSkillTables();
+
+  if (!tables || tables.length < 2) {
+    return null;
+  }
+
+  return findBestExportContainerForTable(tables[1]);
+}
+
+function findBestExportContainerForTable(table) {
+  if (!table) return null;
+
   const container =
-    mainTable.closest(".content-box")
-    || mainTable.closest(".box")
-    || mainTable.closest(".panel")
-    || mainTable.closest(".card")
-    || mainTable.closest(".table-responsive")
-    || mainTable.parentElement;
+    table.closest(".content-box")
+    || table.closest(".box")
+    || table.closest(".panel")
+    || table.closest(".card")
+    || table.closest(".table-responsive")
+    || table.parentElement;
 
-  return container || mainTable;
+  return container || table;
 }
 
 /**
- * 匯出前準備元素。
+ * 第二版新增：
+ * 建立臨時匯出元素。
  *
- * 目的：
- * - 暫時讓 overflow 可見。
- * - 避免表格被捲動容器裁切。
- * - 匯出後恢復原本 style。
+ * 用於：
+ * - 全部球員
+ * - 自選球員
+ *
+ * 好處：
+ * - 匯出圖片不會包含 checkbox
+ * - 不會包含工具列
+ * - 不會截到頁面左側選單
  */
+function createTemporaryExportElementByRange(range) {
+  const tables = findPlayerSkillTables();
+
+  if (!tables || tables.length === 0) {
+    return null;
+  }
+
+  const selectedPlayerIds = range === EXPORT_RANGE_SELECTED
+    ? getSelectedExportPlayerIds()
+    : null;
+
+  if (range === EXPORT_RANGE_SELECTED && selectedPlayerIds.length === 0) {
+    alert("尚未勾選任何球員，請至少選擇一位球員。");
+    return null;
+  }
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "bp-temp-export-wrapper";
+
+  const title = document.createElement("div");
+  title.className = "bp-temp-export-title";
+  title.textContent = `BasketPulse Helper - ${getExportRangeLabel(range)}`;
+  wrapper.appendChild(title);
+
+  let appendedTableCount = 0;
+
+  tables.forEach((table, tableIndex) => {
+    const tableGroup = tableIndex === 0 ? "main" : "loan";
+
+    if (range === EXPORT_RANGE_ALL) {
+      const clonedSection = cloneTableSectionForExport(table, {
+        tableIndex,
+        tableGroup,
+        selectedPlayerIds: null
+      });
+
+      if (clonedSection) {
+        wrapper.appendChild(clonedSection);
+        appendedTableCount += 1;
+      }
+
+      return;
+    }
+
+    if (range === EXPORT_RANGE_SELECTED) {
+      const clonedSection = cloneTableSectionForExport(table, {
+        tableIndex,
+        tableGroup,
+        selectedPlayerIds
+      });
+
+      if (clonedSection) {
+        wrapper.appendChild(clonedSection);
+        appendedTableCount += 1;
+      }
+    }
+  });
+
+  if (appendedTableCount === 0) {
+    return null;
+  }
+
+  return wrapper;
+}
+
+/**
+ * 第二版新增：
+ * 複製指定 table 裡要匯出的球員列。
+ */
+function cloneTableSectionForExport(table, options = {}) {
+  const tableIndex = options.tableIndex || 0;
+  const tableGroup = options.tableGroup || "main";
+  const selectedPlayerIds = options.selectedPlayerIds || null;
+
+  const playerRows = [...table.querySelectorAll("tbody tr.bp-original-player-row")];
+
+  const exportPlayerRows = playerRows.filter(row => {
+    const playerId = row.dataset.playerId;
+
+    if (!playerId) return false;
+
+    if (selectedPlayerIds) {
+      return selectedPlayerIds.includes(playerId);
+    }
+
+    return true;
+  });
+
+  if (exportPlayerRows.length === 0) {
+    return null;
+  }
+
+  const section = document.createElement("div");
+  section.className = "bp-temp-export-section";
+
+  const sectionTitle = document.createElement("div");
+  sectionTitle.className = "bp-temp-export-section-title";
+  sectionTitle.textContent = tableIndex === 0 ? "主要球員" : "出借球員";
+  section.appendChild(sectionTitle);
+
+  const clonedTable = table.cloneNode(false);
+  clonedTable.classList.add("bp-temp-export-table");
+
+  const originalThead = table.querySelector("thead");
+  if (originalThead) {
+    const clonedThead = originalThead.cloneNode(true);
+    removeExportCheckboxesFromElement(clonedThead);
+    clonedTable.appendChild(clonedThead);
+  }
+
+  const clonedTbody = document.createElement("tbody");
+
+  exportPlayerRows.forEach(originalPlayerRow => {
+    const playerId = originalPlayerRow.dataset.playerId;
+
+    const clonedPlayerRow = originalPlayerRow.cloneNode(true);
+    removeExportCheckboxesFromElement(clonedPlayerRow);
+    removeHelperOnlyClassesForExport(clonedPlayerRow);
+    clonedTbody.appendChild(clonedPlayerRow);
+
+    const analysisRow = table.querySelector(`tr.bp-analysis-row[data-player-id="${playerId}"]`);
+    const trainingRow = table.querySelector(`tr.bp-training-row[data-player-id="${playerId}"]`);
+
+    if (analysisRow && analysisRow.dataset.hasData === "1" && !analysisRow.classList.contains("bp-helper-hidden")) {
+      const clonedAnalysisRow = analysisRow.cloneNode(true);
+      removeHelperOnlyClassesForExport(clonedAnalysisRow);
+      clonedAnalysisRow.style.display = "";
+      clonedTbody.appendChild(clonedAnalysisRow);
+    }
+
+    if (trainingRow && trainingRow.dataset.hasData === "1" && !trainingRow.classList.contains("bp-helper-hidden")) {
+      const clonedTrainingRow = trainingRow.cloneNode(true);
+      removeHelperOnlyClassesForExport(clonedTrainingRow);
+      clonedTrainingRow.style.display = "";
+      clonedTbody.appendChild(clonedTrainingRow);
+    }
+  });
+
+  clonedTable.appendChild(clonedTbody);
+  section.appendChild(clonedTable);
+
+  return section;
+}
+
+function getSelectedExportPlayerIds() {
+  return [...document.querySelectorAll(".bp-export-player-checkbox")]
+    .filter(checkbox => checkbox.checked)
+    .map(checkbox => checkbox.dataset.playerId)
+    .filter(Boolean);
+}
+
+function removeExportCheckboxesFromElement(element) {
+  if (!element) return;
+
+  element.querySelectorAll(".bp-export-checkbox-wrap").forEach(node => {
+    node.remove();
+  });
+}
+
+function removeHelperOnlyClassesForExport(element) {
+  if (!element) return;
+
+  element.classList.remove("bp-helper-hidden");
+
+  element.querySelectorAll(".bp-helper-hidden").forEach(node => {
+    node.classList.remove("bp-helper-hidden");
+  });
+}
+
 function prepareElementForImageExport(element) {
   const changedElements = [];
 
@@ -1324,9 +1574,6 @@ function prepareElementForImageExport(element) {
   };
 }
 
-/**
- * 下載 canvas 成 PNG。
- */
 function downloadCanvasAsPng(canvas, filename) {
   const dataUrl = canvas.toDataURL("image/png");
 
@@ -1339,10 +1586,7 @@ function downloadCanvasAsPng(canvas, filename) {
   link.remove();
 }
 
-/**
- * 建立匯出圖片檔名。
- */
-function createExportImageFilename() {
+function createExportImageFilename(rangeLabel = "主要球員") {
   const now = new Date();
 
   const yyyy = now.getFullYear();
@@ -1351,12 +1595,13 @@ function createExportImageFilename() {
   const hh = String(now.getHours()).padStart(2, "0");
   const mi = String(now.getMinutes()).padStart(2, "0");
 
-  return `BasketPulse_主要球員技能_${yyyy}-${mm}-${dd}_${hh}${mi}.png`;
+  const safeRangeLabel = String(rangeLabel || "主要球員")
+    .replace(/[\\/:*?"<>|]/g, "")
+    .trim();
+
+  return `BasketPulse_${safeRangeLabel}_${yyyy}-${mm}-${dd}_${hh}${mi}.png`;
 }
 
-/**
- * 文字整理
- */
 function normalizeText(text) {
   return String(text || "")
     .replace(/\r/g, "\n")
@@ -1366,9 +1611,6 @@ function normalizeText(text) {
     .trim();
 }
 
-/**
- * 百分比整理
- */
 function normalizePercentValue(value) {
   return String(value || "")
     .replace(/\s+/g, "")
