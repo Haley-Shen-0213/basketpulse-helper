@@ -171,3 +171,122 @@ body.bp-export-custom-mode tr.bp-original-player-row:hover {
 .bp-temp-export-table td {
   background-clip: padding-box;
 }
+
+/* Match Probe */
+#bp-match-probe-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+#bp-match-probe-toolbar .bp-helper-title {
+  font-weight: 700;
+  color: #0f172a;
+  margin-right: 4px;
+}
+
+#bp-match-probe-toolbar button {
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 4px 8px;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #0f172a;
+  cursor: pointer;
+}
+
+#bp-match-probe-toolbar button:hover {
+  background: #e2e8f0;
+}
+
+#bp-match-probe-toolbar button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.bp-match-probe-match-id {
+  color: #334155;
+  font-weight: 600;
+}
+
+#bp-match-probe-panel {
+  margin: 10px 0;
+  padding: 10px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+}
+
+.bp-match-probe-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.bp-match-probe-panel-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.bp-match-probe-panel-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.bp-match-probe-copy-button {
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 4px 8px;
+  border: 1px solid #94a3b8;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #0f172a;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.bp-match-probe-copy-button:hover {
+  background: #e2e8f0;
+}
+
+.bp-match-probe-copy-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.bp-match-probe-pre {
+  max-height: 420px;
+  overflow: auto;
+  padding: 10px;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+/* Hidden iframe safety */
+#bp-hidden-play-by-play-frame {
+  position: fixed !important;
+  left: -99999px !important;
+  top: 0 !important;
+  width: 1200px !important;
+  height: 900px !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  border: 0 !important;
+  z-index: -1 !important;
+}

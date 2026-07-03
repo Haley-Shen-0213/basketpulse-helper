@@ -9,6 +9,11 @@ function main() {
     return;
   }
 
+  if (isMatchDescriptionPage()) {
+    initMatchProbePage();
+    return;
+  }
+
   bpDebugLog("[BasketPulse Helper] unsupported BasketPulse page");
 }
 

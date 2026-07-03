@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "BasketPulse Helper",
-  "version": "0.1.2",
-  "description": "BasketPulse 球員技能、潛力與訓練輔助工具",
+  "version": "0.2.0",
+  "description": "BasketPulse 球員技能、潛力與訓練、比賽數據強化輔助工具",
   "permissions": [
     "storage"
   ],
@@ -34,6 +34,15 @@
         "src/content/training/trainingExport.js",
         "src/content/training/trainingToolbar.js",
         "src/content/training/trainingPage.js",
+
+        "src/content/match/matchFetch.js",
+        "src/content/match/matchParser.js",
+        "src/content/match/matchToolbar.js",
+        "src/content/match/matchRules.js",
+        "src/content/match/matchPlayByPlayParser.js",
+        "src/content/match/matchAnalyzer.js",
+        "src/content/match/matchSupplementRenderer.js",
+        "src/content/match/matchPage.js",
 
         "src/content/content.js"
       ],
